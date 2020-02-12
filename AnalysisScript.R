@@ -1,4 +1,12 @@
-install.packages("zeallot")
+#--------------------------------------------------------------------#
+#       Project: Accelerometer Raw Data Analyzer and Smoother        #
+#                    Author: Skyler Colledge                         #
+#                 Open Source Code, 02/08/2020                       #
+#--------------------------------------------------------------------#
+
+if(!is.element('zeallot', installed.packages()[,1]))
+{install.packages('zeallot', dependencies = TRUE)
+} else {print("zeallot library already installed")}
 
 extraction_dir = "home/pi/Documents"
 saving_dir = ""
@@ -9,11 +17,8 @@ directory_question <- readline(prompt = "Do you want to use the predefined direc
 # If yes, break
 if (directory_question == 'Y') {
   break
-}
-
-# If not, specify one
-if else {
-  extraction_dir <- input("Under which working directory do you want to extract data from?")
+} else {
+  extraction_dir <- readline(prompt = "Under which working directory do you want to extract data from? ")
 }
 
 
