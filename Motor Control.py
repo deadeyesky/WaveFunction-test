@@ -30,6 +30,6 @@ while True:
         break
         GPIO.cleanup()
     else:
-        pwm12.start(true_pwm(value))
+        pwm.start(true_pwm(value))
         print("Motor speed set to {}%".format(true_pwm(value))
 
