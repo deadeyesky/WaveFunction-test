@@ -20,6 +20,7 @@
 
 #define MAXIMUM_FREQUENCY 10000
 #define MINIMUM_FREQUENCY 150
+#define SAMPLES 500
 
 int sensor1 = 0;
 int sensor2 = 0;
@@ -108,7 +109,7 @@ void fullRangeTest () {
 
     for (float i = MAXIMUM_FREQUENCY; i >= MINIMUM_FREQUENCY; i--) {
       sendFrequency(i);
-      for (int j = 1000; j >= 0; j--) {
+      for (int j = SAMPLES; j >= 0; j--) {
         sensor1 = analogRead(MIC_1);
         sensor2 = analogRead(MIC_2);
         delay(10);
@@ -121,9 +122,16 @@ void fullRangeTest () {
           maxval2 = sensor2;
         }
       }
-      raw_data.println(i + "\t" + maxval1.toString() + "\t" + maxval2.toString());
+      raw_data.print(i);
+      raw_data.print("\t");
+      raw_data.print(maxval1);
+      raw_data.print("\t");
+      raw_data.println(maxval2);
+
+      // Reset the maximum values for each sensor
       maxval1 = 0; maxval2 = 0;
     }
+    
     raw_data.close();
     Serial.println("Finished");
   }
