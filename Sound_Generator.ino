@@ -150,9 +150,7 @@ void loop () {
 
           // This for loop obtains a specified number of samples
           for (int i = SAMPLES; i >= 0; i--) {
-            dataFile.print(analogRead(0));            // Reads the first microphone
-            dataFile.print("\t");                     // Creates a tab delimiter in the .txt file
-            dataFile.println(analogRead(1));          // Reads the second microphone
+            dataFile.print(analogRead(A0) + "\t" + analogRead(A1));  // Inserts the values in the file with a tab delimiter
           }
           dataFile.println("");                       // Creates a new line when the frequency changes
         }
@@ -174,9 +172,7 @@ void loop () {
 
       // Program samples for a defined amount of times
       for (int i = SAMPLES; i >= 0; i--) {
-        dataFile.print(analogRead(0));                // Reads the first microphone
-        dataFile.print("\t");                         // Creates a tab delimiter in the .txt file
-        dataFile.println(analogRead(1));              // Reads the second microphone
+        dataFile.print(analogRead(A0) + "\t" + analogRead(A1));  // Inserts the values in the file with a tab delimiter
       }
       dataFile.close();                               // Closes the file after the writing is done
       sendFrequency(0);                               // Sets the AD9850 to 0 to turn off noise
