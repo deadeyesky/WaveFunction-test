@@ -5,31 +5,45 @@
 * returning energy with a pair of microphones.
 */
 
+// Import libraries
 #include "SD.h"
-#include"SPI.h"
+#include "SPI.h"
 
+// Define signal generator pins
 #define W_CLK 6       // Pin 6 - connect to AD9850 module word load clock pin (CLK)
 #define FQ_UD 5       // Pin 5 - connect to freq update pin (FQ)
-#define DATA 4       // Pin 4 - connect to serial data load pin (DATA)
-#define RESET 3      // Pin 3 - connect to reset pin (RST).
+#define DATA 4        // Pin 4 - connect to serial data load pin (DATA)
+#define RESET 3       // Pin 3 - connect to reset pin (RST).
 
+// Set default pin values for the generator pins
 #define pulseHigh(pin) {digitalWrite(pin, HIGH); digitalWrite(pin, LOW);}
 
-#define MIC_1 A0
-#define MIC_2 A1
-
-#define MAXIMUM_FREQUENCY 10000
+#define MAXIMUM_FREQUENCY 3000
 #define MINIMUM_FREQUENCY 150
-#define SAMPLES 500
+#define SAMPLES 10000
+
+#define FASTADC 1
+
+// Defines for setting and clearing register bits
+#ifndef cbi
+#define cbi(sfr, bit) (_SFR_BYTE(sfr) &= ~_BV(bit))
+#endif
+#ifndef sbi
+#define sbi(sfr, bit) (_SFR_BYTE(sfr) |= _BV(bit))
+#endif
+
+const uint8_t CHIP_SELECT = 13;
 
 int sensor1 = 0;
 int sensor2 = 0;
-int maxval1 = 0;
-int maxval2 = 0;
+int freq_num = 0;
 uint32_t lastSample = 0;
 
-String input;  // Used for the serial input function
-File raw_data;
+String command;  // Used for the serial input function
+String sensor_read; // Used as an object to append the sensor readings
+String read_string;
+
+char filepath1[] = "spectral_test.txt";
 
 void display_info () {
   // Set the serial monitor baudrate
@@ -44,12 +58,29 @@ void display_info () {
   Serial.println("Frequency Update Pin: 5 (PWM)------");
   Serial.println("Data Pin: 4 (non-PWM)--------------");
   Serial.println("Reset Pin: 3 (PWM, but not used)---");
+  Serial.println("Analog Measurement prescale: 64----");
+  Serial.println("SD card Chip Select Pin: 13--------");
+  Serial.println("");
   delay(1500);
+  // Wait until the SD card initializes
+  while (!Serial) {}
+  Serial.print("Initializing SD card... ");
+
+  // If the SD card doesn't start up:
+  if (!SD.begin(CHIP_SELECT)) {
+    //SD.initErrorHalt();
+    Serial.println("initialization failed!");
+    //while (1);
+    return;
+  }
+
+  Serial.println("initialization done.");
   Serial.println("");
   Serial.println("Frequency Range is from 0 to 10 Mhz.");
   Serial.println("The human ear can only hear noises from 80 Hz");
   Serial.println("to 20,000 Hz. Anything outside these cannot  ");
   Serial.println("be heard.");
+  Serial.println("");
   delay(1500);
 }
 
@@ -81,71 +112,75 @@ void setup () {
   pinMode(DATA, OUTPUT);
   pinMode(RESET, OUTPUT);
 
-  // Microphone pins get set to input
-  pinMode(MIC_1, INPUT);
-  pinMode(MIC_2, INPUT);
-
   pulseHigh(RESET);
   pulseHigh(W_CLK);
   pulseHigh(FQ_UD);  // This pulse enables serial mode - Datasheet page 12 figure 10
 
-  while (!Serial) {}
-
-  Serial.print("Initializing SD card...");
-
-  if (!SD.begin(10)) {
-    Serial.println("initialization failed!");
-    while (1);
-  }
-
-  Serial.println("initialization done.");
-}
-
-void fullRangeTest () {
-  if(Serial.available()) {
-    Serial.println("");
-    raw_data = SD.open("data.txt", FILE_WRITE);
-    raw_data.println("frequency\tsensor1\tsensor2");
-
-    for (float i = MAXIMUM_FREQUENCY; i >= MINIMUM_FREQUENCY; i--) {
-      sendFrequency(i);
-      for (int j = SAMPLES; j >= 0; j--) {
-        sensor1 = analogRead(MIC_1);
-        sensor2 = analogRead(MIC_2);
-        delay(10);
-
-        if (sensor1 > maxval1) {
-          maxval1 = sensor1;
-        }
-
-        else if (sensor2 > maxval2) {
-          maxval2 = sensor2;
-        }
-      }
-      raw_data.print(i);
-      raw_data.print("\t");
-      raw_data.print(maxval1);
-      raw_data.print("\t");
-      raw_data.println(maxval2);
-
-      // Reset the maximum values for each sensor
-      maxval1 = 0; maxval2 = 0;
-    }
-    
-    raw_data.close();
-    Serial.println("Finished");
-  }
+  #if FASTADC
+    // Set prescale to 64
+    sbi(ADCSRA, ADPS2) ;
+    sbi(ADCSRA, ADPS1) ;
+    cbi(ADCSRA, ADPS0) ;
+  #endif
 }
 
 void loop () {
-  if(Serial.available()) {
-    input = Serial.readStringUntil('\n');
-    Serial.println("Frequency set to " + input + "Hz");
+  // Initialize the serial read
+  if (Serial.available()) {
+    command = Serial.readStringUntil('\n');
+    // The following command creates file that appends a full spectrum of frequncies automatically
+    if (command.equals("full test")) {
+      Serial.println("Starting full spectral test.");
+      File dataFile = SD.open(filepath1, FILE_WRITE);
 
-    if (input == "test") {
-      fullRangeTest();
+      // When the data file is available, the program will write to it
+      if (dataFile) {
+        if (SD.exists(filepath1)) {
+          // The program deletes the pre-existing file to make room for the new one
+          Serial.println("File alread exists. Overwriting file.");
+          SD.remove(filepath1);
+          delay(100);
+        }
+
+        // Start the frequency read from high to low frequency
+        for (int j = MAXIMUM_FREQUENCY; j >= MINIMUM_FREQUENCY; j--) {
+          // Prints the frequency being tested and writes to the AD9850 the frequency value
+          sendFrequency(float(j));
+
+          // This for loop obtains a specified number of samples
+          for (int i = SAMPLES; i >= 0; i--) {
+            dataFile.print(analogRead(0));            // Reads the first microphone
+            dataFile.print("\t");                     // Creates a tab delimiter in the .txt file
+            dataFile.println(analogRead(1));          // Reads the second microphone
+          }
+          dataFile.println("");                       // Creates a new line when the frequency changes
+        }
+        dataFile.close();                             // Closes the file after the writing is done
+        Serial.println("Finished");                      // Debugger for signifying the completion of the file write
+      }
+
+      // If the file isn't open, the serial monitor shows an error:
+      else {
+        Serial.println("error opening spectral_test.txt");
+      }
     }
-    // Frequency number gets applied to the AD9850 from the Nano
-    sendFrequency(input.toFloat());
+
+    // The following code is used for testing a specific frequency.
+    else if (command.startsWith("test")) {
+      String num = command.substring(5);          // Creates a string that contains the values starting from the 5th place holder
+      Serial.println("Sampling at " + num);
+      String filename = ".txt";
+      File dataFile = SD.open(filename.concat(num), FILE_WRITE);    // Starts file with the name of the frequency being sampled
+      sendFrequency(num.toFloat());                   // Sets the AD9850 to generate this frequency
+
+      // Program samples for a defined amount of times
+      for (int i = SAMPLES; i >= 0; i--) {
+        dataFile.print(analogRead(0));                // Reads the first microphone
+        dataFile.print("\t");                         // Creates a tab delimiter in the .txt file
+        dataFile.println(analogRead(1));              // Reads the second microphone
+      }
+      dataFile.close();                               // Closes the file after the writing is done
+      Serial.println("Finished");                      // Debugger for signifying the completion of the file write
+    }
   }
 }
