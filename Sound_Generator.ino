@@ -73,6 +73,7 @@ void display_info () {
     //while (1);
     return;
   }
+  delay(1000);
 
   Serial.println("initialization done.");
   Serial.println("");
@@ -158,7 +159,6 @@ void loop () {
         dataFile.close();                             // Closes the file after the writing is done
         Serial.println("Finished");                      // Debugger for signifying the completion of the file write
       }
-
       // If the file isn't open, the serial monitor shows an error:
       else {
         Serial.println("error opening spectral_test.txt");
@@ -169,9 +169,8 @@ void loop () {
     else if (command.startsWith("test")) {
       String num = command.substring(5);          // Creates a string that contains the values starting from the 5th place holder
       Serial.println("Sampling at " + num);
-      String filename = ".txt";
-      File dataFile = SD.open(filename.concat(num), FILE_WRITE);    // Starts file with the name of the frequency being sampled
-      sendFrequency(num.toFloat());                   // Sets the AD9850 to generate this frequency
+      File dataFile = SD.open((num + ".txt").c_str(), FILE_WRITE);    // Starts file with the name of the frequency being sampled
+      sendFrequency(num.toFloat());                   // Sets the AD9850 to generate the selected frequency
 
       // Program samples for a defined amount of times
       for (int i = SAMPLES; i >= 0; i--) {
@@ -180,7 +179,20 @@ void loop () {
         dataFile.println(analogRead(1));              // Reads the second microphone
       }
       dataFile.close();                               // Closes the file after the writing is done
-      Serial.println("Finished");                      // Debugger for signifying the completion of the file write
+      sendFrequency(0);                               // Sets the AD9850 to 0 to turn off noise
+      Serial.println("Finished");                     // Debugger for signifying the completion of the file write
+    }
+
+    // Shuts off the signal generator when either 0 or "off" are typed
+    else if (command.equals("off") || command.equals("0")) {
+      sendFrequency(0);
+      Serial.println("AD9850 is deactivated.");
+    }
+
+    // Any number that is entered in will just activate the speaker to vibrate at a specific frequency
+    else {
+      Serial.println("Frequency is set to " + command);
+      sendFrequency(command.toFloat());
     }
   }
 }
