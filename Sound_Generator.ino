@@ -18,9 +18,9 @@
 // Set default pin values for the generator pins
 #define pulseHigh(pin) {digitalWrite(pin, HIGH); digitalWrite(pin, LOW);}
 
-#define MAXIMUM_FREQUENCY 3000
-#define MINIMUM_FREQUENCY 150
-#define SAMPLES 10000
+#define MAXIMUM_FREQUENCY 5000
+#define MINIMUM_FREQUENCY 0
+#define SAMPLES 1000
 
 #define FASTADC 1
 
@@ -28,66 +28,66 @@
 #ifndef cbi
 #define cbi(sfr, bit) (_SFR_BYTE(sfr) &= ~_BV(bit))
 #endif
+
 #ifndef sbi
 #define sbi(sfr, bit) (_SFR_BYTE(sfr) |= _BV(bit))
 #endif
 
-const uint8_t CHIP_SELECT = 13;
-
-int sensor1 = 0;
-int sensor2 = 0;
-int freq_num = 0;
-uint32_t lastSample = 0;
+#define CHIP_SELECT 13
 
 String command;  // Used for the serial input function
 String sensor_read; // Used as an object to append the sensor readings
 String read_string;
 
-char filepath1[] = "spectral_test.txt";
+char filepath1[] = "spectral_test.csv";
 
 void display_info () {
   // Set the serial monitor baudrate
-  Serial.begin(9600);
-  Serial.println("--Arduino Nano Frequency Generator");
-  Serial.println("Signal Generator: AD9850-----------");
-  Serial.println("Chip: AD9850 8RSZ 1432-------------");
-  Serial.println("Clock Speed: 125,000,000 MHz (5V)--");
-  Serial.println("Square Wave Mode?: No--------------");
-  Serial.println("Sine Wave Mode?: Yes---------------");
-  Serial.println("Word Load Clock Pin: 6 (PWM)-------");
-  Serial.println("Frequency Update Pin: 5 (PWM)------");
-  Serial.println("Data Pin: 4 (non-PWM)--------------");
-  Serial.println("Reset Pin: 3 (PWM, but not used)---");
-  Serial.println("Analog Measurement prescale: 64----");
-  Serial.println("SD card Chip Select Pin: 13--------");
-  Serial.println("");
+  Serial.begin(38400);
+  Serial.println(F("-Arduino Nano Frequency Generator-"));
+  Serial.println(F("Signal Generator: AD9850-----------"));
+  Serial.println(F("Chip: AD9850 8RSZ 1432-------------"));
+  Serial.println(F("Clock Speed: 125,000,000 MHz (5V)--"));
+  Serial.println(F("Square Wave Mode?: No--------------"));
+  Serial.println(F("Sine Wave Mode?: Yes---------------"));
+  Serial.println(F("Word Load Clock Pin: 6 (PWM)-------"));
+  Serial.println(F("Frequency Update Pin: 5 (PWM)------"));
+  Serial.println(F("Data Pin: 4 (non-PWM)--------------"));
+  Serial.println(F("Reset Pin: 3 (PWM, but not used)---"));
+  Serial.println(F("Analog Measurement prescale: 64----"));
+  Serial.println(F("SD card Chip Select Pin: 13--------\n"));
   delay(1500);
   // Wait until the SD card initializes
   while (!Serial) {}
-  Serial.print("Initializing SD card... ");
+  Serial.print(F("Initializing SD card... "));
 
   // If the SD card doesn't start up:
   if (!SD.begin(CHIP_SELECT)) {
     //SD.initErrorHalt();
-    Serial.println("initialization failed!");
+    Serial.println(F("initialization failed!"));
+    Serial.println(F("Either there is no SD card, or it's corrupted, or isn't connected."));
     //while (1);
-    return;
   }
-  delay(1000);
 
-  Serial.println("initialization done.");
-  Serial.println("");
-  Serial.println("Frequency Range is from 0 to 10 Mhz.");
-  Serial.println("The human ear can only hear noises from 80 Hz");
-  Serial.println("to 20,000 Hz. Anything outside these cannot  ");
-  Serial.println("be heard.");
-  Serial.println("");
+  Serial.println(F("initialization done.\n"));
+  delay(1000);
+  Serial.println(F("Frequency Range is from 0 to 10 Mhz."));
+  Serial.println(F("The human ear can only hear noises from 80 Hz"));
+  Serial.println(F("to 20,000 Hz. Anything outside these cannot  "));
+  Serial.println(F("be heard.\n"));
+  delay(1000);
+  Serial.println(F("-------------Commands-------------"));
+  Serial.println(F("full:      runs full spectral test"));
+  Serial.println(F("test <in>: tests defined frequency"));
+  Serial.println(F("runtest:   outputs frequency range"));
+  Serial.println(F("off:  shuts off the speaker output"));
+  Serial.println(F("<int>:   outputs entered frequency\n"));
   delay(1500);
 }
 
 // transfers a byte, a bit at a time, LSB first to the 9850 via serial DATA line
 void tfr_byte (byte data) {
-  for (int i = 0; i < 8; i++, data >>= 1) {
+  for (byte i = 0; i < 8; i++, data >>= 1) {
     digitalWrite(DATA, data & 0x01);
     pulseHigh(W_CLK);   //after each bit sent, CLK is pulsed high
   }
@@ -96,7 +96,7 @@ void tfr_byte (byte data) {
 // frequency calc from datasheet page 8 = <sys clock> * <frequency tuning word>/2^32
 void sendFrequency (double frequency) {
   int32_t freq = frequency * 4294967295 / 125000000;  // Note 125 MHz clock on 9850
-  for (int b = 0; b < 4; b++, freq >>= 8) {
+  for (byte b = 0; b < 4; b++, freq >>= 8) {
     tfr_byte(freq & 0xFF);
   }
   tfr_byte(0x000);   // Final control byte, all 0 for 9850 chip
@@ -105,6 +105,7 @@ void sendFrequency (double frequency) {
 
 void setup () {
   // Run Setup function
+  sendFrequency(0);
   display_info();
 
   // Configure data pins for output
@@ -112,6 +113,9 @@ void setup () {
   pinMode(W_CLK, OUTPUT);
   pinMode(DATA, OUTPUT);
   pinMode(RESET, OUTPUT);
+
+  // Port manipulation alternative:
+  //DDRC = B01111000
 
   pulseHigh(RESET);
   pulseHigh(W_CLK);
@@ -130,65 +134,85 @@ void loop () {
   if (Serial.available()) {
     command = Serial.readStringUntil('\n');
     // The following command creates file that appends a full spectrum of frequncies automatically
-    if (command.equals("full test")) {
+    if (command.equals("full")) {
       Serial.println("Starting full spectral test.");
-      File dataFile = SD.open(filepath1, FILE_WRITE);
 
-      // When the data file is available, the program will write to it
-      if (dataFile) {
-        if (SD.exists(filepath1)) {
-          // The program deletes the pre-existing file to make room for the new one
-          Serial.println("File alread exists. Overwriting file.");
-          SD.remove(filepath1);
-          delay(100);
-        }
+      // Start the frequency read from high to low frequency
+      for (int j = MINIMUM_FREQUENCY; j < MAXIMUM_FREQUENCY; j+=10) {
+        // Initializes the file with the name as the specific frequency being tested
+        File dataFile = SD.open((String(j) + ".csv").c_str(), FILE_WRITE);
+        // Sets the frequency value of the AD9850
+        sendFrequency(float(j));
+        delay(10);
 
-        // Start the frequency read from high to low frequency
-        for (int j = MAXIMUM_FREQUENCY; j >= MINIMUM_FREQUENCY; j--) {
-          // Prints the frequency being tested and writes to the AD9850 the frequency value
-          sendFrequency(float(j));
-
+        if (dataFile) {
+          Serial.print("Sampling...");
           // This for loop obtains a specified number of samples
           for (int i = SAMPLES; i >= 0; i--) {
-            dataFile.println(analogRead(A0) + "\t" + analogRead(A1));  // Inserts the values in the file with a tab delimiter
+            dataFile.println(String(analogRead(A0)) + "," + String(analogRead(A1)));  // Inserts the values in the file with a tab delimiter
           }
-          dataFile.println("");                       // Creates a new line when the frequency changes
+          dataFile.close();                             // Closes the file after the writing is done
+          Serial.print(" Finished reading " + String(j));// Debugger for signifying the completion of the file write
+          Serial.println(" Hz.");
         }
-        dataFile.close();                             // Closes the file after the writing is done
-        Serial.println("Finished");                      // Debugger for signifying the completion of the file write
+        // If the file isn't open, the serial monitor shows an error:
+        //else {
+        //  Serial.println("!Error opening spectral_test.csv!");
+        //}
       }
-      // If the file isn't open, the serial monitor shows an error:
-      else {
-        Serial.println("error opening spectral_test.txt");
+      sendFrequency(0);
+    }
+
+    else if (command.equals("runtest")) {
+      Serial.print(F("Running test... "));
+      for (int j = MINIMUM_FREQUENCY; j < MAXIMUM_FREQUENCY; j+=10) {
+        sendFrequency(j);
+        delay(1);
       }
+      sendFrequency(0);
+      Serial.println(F("done."));
     }
 
     // The following code is used for testing a specific frequency.
     else if (command.startsWith("test")) {
       String num = command.substring(5);          // Creates a string that contains the values starting from the 5th place holder
       Serial.println("Sampling at " + num);
-      File dataFile = SD.open((num + ".txt").c_str(), FILE_WRITE);    // Starts file with the name of the frequency being sampled
-      sendFrequency(num.toFloat());                   // Sets the AD9850 to generate the selected frequency
-
-      // Program samples for a defined amount of times
-      for (int i = SAMPLES; i >= 0; i--) {
-        dataFile.println(analogRead(A0) + "\t" + analogRead(A1));  // Inserts the values in the file with a tab delimiter
+      File dataFile = SD.open((num + ".csv").c_str(), FILE_WRITE);    // Starts file with the name of the frequency being sampled
+      sendFrequency(num.toFloat());    // Sets the AD9850 to generate the selected frequency
+      delay(100);     // Small delay for giving the speaker time to operate before sampling takes place
+      if (dataFile) {
+        // Program samples for a defined amount of times
+        for (int i = SAMPLES; i >= 0; i--) {
+          dataFile.println(String(analogRead(A0)) + "," + String(analogRead(A1)));  // Inserts the values in the file with a tab delimiter
+        }
+        dataFile.close();                               // Closes the file after the writing is done
+        sendFrequency(0);                               // Sets the AD9850 to 0 to turn off noise
+        Serial.println("Finished. Saved as " + num + ".csv");  // Debugger for signifying the completion of the file write
       }
-      dataFile.close();                               // Closes the file after the writing is done
-      sendFrequency(0);                               // Sets the AD9850 to 0 to turn off noise
-      Serial.println("Finished");                     // Debugger for signifying the completion of the file write
     }
 
     // Shuts off the signal generator when either 0 or "off" are typed
     else if (command.equals("off") || command.equals("0")) {
       sendFrequency(0);
-      Serial.println("AD9850 is deactivated.");
+      Serial.println(F("AD9850 is deactivated."));
     }
 
     // Any number that is entered in will just activate the speaker to vibrate at a specific frequency
     else {
-      Serial.println("Frequency is set to " + command);
-      sendFrequency(command.toFloat());
+      Serial.print("Frequency is set to " + command);
+      Serial.println(F(" Hz."));
+      if (command.toInt() >= 1000) {
+        // Gradually increase the frequency
+        for (int i = 0; i < command.toInt(); i+=10) {
+          sendFrequency(i);
+          delayMicroseconds(100);
+        }
+      }
+
+      // Play frequency as usual.
+      else {
+        sendFrequency(command.toDouble());
+      }
     }
   }
 }
